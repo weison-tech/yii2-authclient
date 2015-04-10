@@ -58,4 +58,5 @@ class WeiXinOAuth extends OAuth2
     {
         return 'WeiXin';
     }
+
 }
