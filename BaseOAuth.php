@@ -271,9 +271,6 @@ abstract class BaseOAuth extends BaseClient implements ClientInterface
             }
             case self::CONTENT_TYPE_JSON: {
                 $response = Json::decode($rawResponse, true);
-                if (isset($response['error'])) {
-                    throw new Exception('Response error: ' . $response['error']);
-                }
                 break;
             }
             case self::CONTENT_TYPE_URLENCODED: {
@@ -428,7 +425,11 @@ abstract class BaseOAuth extends BaseClient implements ClientInterface
      */
     protected function setState($key, $value)
     {
-        $session = Yii::$app->getSession();
+        if (!Yii::$app->has('session')) {
+            return $this;
+        }
+        /* @var \yii\web\Session $session */
+        $session = Yii::$app->get('session');
         $key = $this->getStateKeyPrefix() . $key;
         $session->set($key, $value);
         return $this;
@@ -441,7 +442,11 @@ abstract class BaseOAuth extends BaseClient implements ClientInterface
      */
     protected function getState($key)
     {
-        $session = Yii::$app->getSession();
+        if (!Yii::$app->has('session')) {
+            return null;
+        }
+        /* @var \yii\web\Session $session */
+        $session = Yii::$app->get('session');
         $key = $this->getStateKeyPrefix() . $key;
         $value = $session->get($key);
         return $value;
@@ -454,7 +459,11 @@ abstract class BaseOAuth extends BaseClient implements ClientInterface
      */
     protected function removeState($key)
     {
-        $session = Yii::$app->getSession();
+        if (!Yii::$app->has('session')) {
+            return true;
+        }
+        /* @var \yii\web\Session $session */
+        $session = Yii::$app->get('session');
         $key = $this->getStateKeyPrefix() . $key;
         $session->remove($key);
         return true;

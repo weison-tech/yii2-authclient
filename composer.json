@@ -5,8 +5,16 @@
     "type": "yii2-extension",
     "license": "BSD-3-Clause",
     "support": {
+<<<<<<< HEAD
         "issues": "https://github.com/weison-tech/yii2-authclient/issues?state=open",
         "source": "https://github.com/weison-tech/yii2-authclient"
+=======
+        "issues": "https://github.com/yiisoft/yii2-authclient/issues",
+        "forum": "http://www.yiiframework.com/forum/",
+        "wiki": "http://www.yiiframework.com/wiki/",
+        "irc": "irc://irc.freenode.net/yii",
+        "source": "https://github.com/yiisoft/yii2-authclient"
+>>>>>>> source/master
     },
     "authors": [
         {
@@ -16,7 +24,7 @@
     ],
     "minimum-stability": "dev",
     "require": {
-        "yiisoft/yii2": "*",
+        "yiisoft/yii2": ">=2.0.4",
         "ext-curl": "*"
     },
     "autoload": {
