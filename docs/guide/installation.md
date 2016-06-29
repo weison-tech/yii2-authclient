@@ -83,8 +83,8 @@ CREATE TABLE auth (
     source_id varchar(255) NOT NULL
 );
 
-ALTER TABLE auth ADD CONSTRAINT fk-auth-user_id-user-id
-FOREIGN KEY user_id REFERENCES user(id) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE auth ADD CONSTRAINT `fk-auth-user_id-user-id`
+FOREIGN KEY auth(user_id) REFERENCES user(id) ON DELETE CASCADE ON UPDATE CASCADE;
 ```
 
 In the SQL above `user` is a standard table that is used in advanced project template to store user

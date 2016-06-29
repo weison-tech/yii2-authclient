@@ -8,6 +8,8 @@
 
 
 ```php
+use app\components\AuthHandler;
+
 class SiteController extends Controller
 {
     public function actions()
@@ -22,7 +24,46 @@ class SiteController extends Controller
 
     public function onAuthSuccess($client)
     {
-       $attributes = $client->getUserAttributes();
+        (new AuthHandler($client))->handle();
+    }
+}
+```
+
+`auth` アクションがパブリックにアクセス可能であることが重要ですので、アクセス・コントロール・フィルタでアクセスが拒否されないように注意して下さい。
+
+AuthHandler の実装は次のようなものになります。
+
+```php
+<?php
+namespace app\components;
+
+use app\models\Auth;
+use app\models\User;
+use Yii;
+use yii\authclient\ClientInterface;
+use yii\helpers\ArrayHelper;
+
+/**
+ * AuthHandler Yii auth コンポーネントによって認証の成功を処理する
+ */
+class AuthHandler
+{
+    /**
+     * @var ClientInterface
+     */
+    private $client;
+
+    public function __construct(ClientInterface $client)
+    {
+        $this->client = $client;
+    }
+
+    public function handle()
+    {
+        $attributes = $this->client->getUserAttributes();
+        $email = ArrayHelper::getValue($attributes, 'email');
+        $id = ArrayHelper::getValue($attributes, 'id');
+        $nickname = ArrayHelper::getValue($attributes, 'login');
 
         /* @var $auth Auth */
         $auth = Auth::find()->where([
@@ -32,37 +73,55 @@ class SiteController extends Controller
 
         if (Yii::$app->user->isGuest) {
             if ($auth) { // ログイン
+                /** @var User $user */
                 $user = $auth->user;
-                Yii::$app->user->login($user);
+                $this->updateUserInfo($user);
+                Yii::$app->user->login($user, Yii::$app->params['user.rememberMeDuration']);
             } else { // ユーザ登録
-                if (isset($attributes['email']) && User::find()->where(['email' => $attributes['email']])->exists()) {
+                if ($email !== null && User::find()->where(['email' => $email])->exists()) {
                     Yii::$app->getSession()->setFlash('error', [
-                        Yii::t('app', "{client} のアカウントと同じメールアドレスを持つユーザが既に存在しますが、まだそのアカウントとリンクされていません。リンクするために、まずメールアドレスを使ってログインしてください。", ['client' => $client->getTitle()]),
+                        Yii::t('app', "User with the same email as in {client} account already exists but isn't linked to it. Login using email first to link it.", ['client' => $this->client->getTitle()]),
                     ]);
+                    /* "{client} のアカウントと同じメールアドレスを持つユーザが既に存在しますが、まだそのアカウントとリンクされていません。リンクするために、まずメールアドレスを使ってログインしてください。" */
                 } else {
                     $password = Yii::$app->security->generateRandomString(6);
                     $user = new User([
-                        'username' => $attributes['login'],
-                        'email' => $attributes['email'],
+                        'username' => $nickname,
+                        'github' => $nickname,
+                        'email' => $email,
                         'password' => $password,
                     ]);
                     $user->generateAuthKey();
                     $user->generatePasswordResetToken();
-                    $transaction = $user->getDb()->beginTransaction();
+
+                    $transaction = User::getDb()->beginTransaction();
+
                     if ($user->save()) {
                         $auth = new Auth([
                             'user_id' => $user->id,
-                            'source' => $client->getId(),
-                            'source_id' => (string)$attributes['id'],
+                            'source' => $this->client->getId(),
+                            'source_id' => (string)$id,
                         ]);
                         if ($auth->save()) {
                             $transaction->commit();
-                            Yii::$app->user->login($user);
+                            Yii::$app->user->login($user, Yii::$app->params['user.rememberMeDuration']);
                         } else {
-                            print_r($auth->getErrors());
+                            Yii::$app->getSession()->setFlash('error', [
+                                Yii::t('app', 'Unable to save {client} account: {errors}', [
+                                    'client' => $this->client->getTitle(),
+                                    'errors' => json_encode($auth->getErrors()),
+                                ]),
+                                /* '{client} のアカウントを保存することが出来ません: {errors}' */
+                            ]);
                         }
                     } else {
-                        print_r($user->getErrors());
+                        Yii::$app->getSession()->setFlash('error', [
+                            Yii::t('app', 'Unable to save user: {errors}', [
+                                'client' => $this->client->getTitle(),
+                                'errors' => json_encode($user->getErrors()),
+                            ]),
+                            /* 'ユーザを保存することが出来ません: {errors}' */
+                        ]);
                     }
                 }
             }
@@ -70,11 +129,49 @@ class SiteController extends Controller
             if (!$auth) { // 認証プロバイダを追加
                 $auth = new Auth([
                     'user_id' => Yii::$app->user->id,
-                    'source' => $client->getId(),
-                    'source_id' => $attributes['id'],
+                    'source' => $this->client->getId(),
+                    'source_id' => (string)$attributes['id'],
                 ]);
-                $auth->save();
+                if ($auth->save()) {
+                    /** @var User $user */
+                    $user = $auth->user;
+                    $this->updateUserInfo($user);
+                    Yii::$app->getSession()->setFlash('success', [
+                        Yii::t('app', 'Linked {client} account.', [
+                            'client' => $this->client->getTitle()
+                        ]),
+                    ]);
+                    /* '{client} のアカウントをリンクしました。' */
+                } else {
+                    Yii::$app->getSession()->setFlash('error', [
+                        Yii::t('app', 'Unable to link {client} account: {errors}', [
+                            'client' => $this->client->getTitle(),
+                            'errors' => json_encode($auth->getErrors()),
+                        ]),
+                    ]);
+                    /* '{client} のアカウントをリンクすることが出来ません: {errors}' */
+                }
+            } else { // 既に使用されている
+                Yii::$app->getSession()->setFlash('error', [
+                    Yii::t('app',
+                        'Unable to link {client} account. There is another user using it.',
+                        ['client' => $this->client->getTitle()]),
+                ]);
+　　　　　　　　/* '{client} のアカウントをリンクすることが出来ません。それを使用している別のユーザがいます。' */
             }
+        }
+    }
+
+    /**
+     * @param User $user
+     */
+    private function updateUserInfo(User $user)
+    {
+        $attributes = $this->client->getUserAttributes();
+        $github = ArrayHelper::getValue($attributes, 'login');
+        if ($user->github === null && $github) {
+            $user->github = $github;
+            $user->save();
         }
     }
 }
@@ -88,7 +185,7 @@ class SiteController extends Controller
 - ユーザがゲストであり、auth にレコードが見つからなかった場合は、新しいユーザを作成して、auth テーブルにレコードを作成する。そして、ログインさせる。
 - ユーザがログインしており、auth にレコードが見つからなかった場合は、追加のアカウントにも接続するようにする (そのデータを auth テーブルに保存する)。
 
-> Note|注意: Auth クライアントの違いによって、認証の成功を処理するときの方法も違ったものになります。
+> Note: Auth クライアントの違いによって、認証の成功を処理するときの方法も違ったものになります。
   たとえば、Twitter はユーザの email を返すことを許していませんので、何らかの方法でそれに対処しなければなりません。
 
 
@@ -118,7 +215,7 @@ class SiteController extends Controller
   プロバイダによってスコープの形式が異なることに注意。
 
 
-> Tip|ヒント: いくつかの異なるクライアントを使用する場合は、[[yii\authclient\BaseClient::normalizeUserAttributeMap]] を使って、クライアントが返す属性を統一することが出来ます。
+> Tip: いくつかの異なるクライアントを使用する場合は、[[yii\authclient\BaseClient::normalizeUserAttributeMap]] を使って、クライアントが返す属性を統一することが出来ます。
 
 
 ### API 呼び出しによって追加のデータを取得する
