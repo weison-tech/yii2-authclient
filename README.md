@@ -20,13 +20,13 @@ The preferred way to install this extension is through [composer](http://getcomp
 Either run
 
 ```
-composer require --prefer-dist yiisoft/yii2-authclient
+composer require --prefer-dist weison-tech/yii2-authclient
 ```
 
 or add
 
 ```json
-"yiisoft/yii2-authclient": "~2.0.0"
+"weison-tech/yii2-authclient": "~2.0.0"
 ```
 
 to the `require` section of your composer.json.
